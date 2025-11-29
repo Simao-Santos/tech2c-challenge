@@ -3,6 +3,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile
 from .models import EmissionRecord
+from .csv_config import CSV_HEADERS
 
 
 class CSVUploadTestCase(TestCase):
@@ -11,6 +12,15 @@ class CSVUploadTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.upload_url = '/api/emissions/import_csv/'
+        # Use headers from configuration
+        self.headers = [
+            CSV_HEADERS['COMPANY'],
+            CSV_HEADERS['YEAR'],
+            CSV_HEADERS['SECTOR'],
+            CSV_HEADERS['ENERGY_CONSUMPTION'],
+            CSV_HEADERS['CO2_EMISSIONS'],
+        ]
+        self.csv_header_line = ','.join(self.headers)
         
     def create_csv_file(self, csv_content, filename='test.csv'):
         """Helper method to create a CSV file from string content"""
@@ -25,7 +35,7 @@ class CSVUploadTestCase(TestCase):
 
     def test_successful_csv_upload_creates_records(self):
         """Test that a valid CSV file successfully creates new records"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 Company A,2023,Energy,1000.50,500.25
 Company B,2023,Manufacturing,2000.75,1000.50"""
         
@@ -39,7 +49,7 @@ Company B,2023,Manufacturing,2000.75,1000.50"""
         self.assertEqual(EmissionRecord.objects.count(), 2)
         
     def test_successful_csv_upload_updates_existing_records(self):
-        """Test that a CSV file updates existing records based on company and year"""
+        """Test that a CSV file updates existing records with same company/year/sector"""
         # Create initial record
         EmissionRecord.objects.create(
             company='Company A',
@@ -49,9 +59,9 @@ Company B,2023,Manufacturing,2000.75,1000.50"""
             co2_emissions_tons=500
         )
         
-        # Upload CSV with same company and year but different values
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
-Company A,2023,Manufacturing,2500.00,750.00"""
+        # Upload CSV with same company, year AND sector but different values
+        csv_content = f"""{self.csv_header_line}
+Company A,2023,Energy,2500.00,750.00"""
         
         file = self.create_csv_file(csv_content)
         response = self.client.post(self.upload_url, {'file': file})
@@ -62,8 +72,7 @@ Company A,2023,Manufacturing,2500.00,750.00"""
         self.assertEqual(EmissionRecord.objects.count(), 1)
         
         # Verify the record was updated
-        record = EmissionRecord.objects.get(company='Company A', year=2023)
-        self.assertEqual(record.sector, 'Manufacturing')
+        record = EmissionRecord.objects.get(company='Company A', year=2023, sector='Energy')
         self.assertEqual(float(record.energy_consumption_mwh), 2500.00)
         self.assertEqual(float(record.co2_emissions_tons), 750.00)
 
@@ -78,8 +87,8 @@ Company A,2023,Manufacturing,2500.00,750.00"""
             co2_emissions_tons=500
         )
         
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
-Company A,2023,Manufacturing,2500.00,750.00
+        csv_content = f"""{self.csv_header_line}
+Company A,2023,Energy,2500.00,750.00
 Company B,2023,Energy,3000.00,1500.00"""
         
         file = self.create_csv_file(csv_content)
@@ -90,6 +99,50 @@ Company B,2023,Energy,3000.00,1500.00"""
         self.assertEqual(response.data['updated'], 1)
         self.assertEqual(response.data['total_processed'], 2)
         self.assertEqual(EmissionRecord.objects.count(), 2)
+
+    def test_csv_duplicate_rows_keeps_highest_emissions(self):
+        """Test that duplicate rows in CSV keep the one with highest emissions/energy"""
+        csv_content = f"""{self.csv_header_line}
+Company A,2023,Energy,1000.00,500.00
+Company A,2023,Energy,2000.00,800.00"""
+        
+        file = self.create_csv_file(csv_content)
+        response = self.client.post(self.upload_url, {'file': file})
+        
+        # Should succeed with 1 created record and 1 conflict logged
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['created'], 1)
+        self.assertEqual(response.data['updated'], 0)
+        self.assertEqual(EmissionRecord.objects.count(), 1)
+        
+        # Verify the kept record is the one with higher values
+        record = EmissionRecord.objects.get(company='Company A', year=2023, sector='Energy')
+        self.assertEqual(float(record.energy_consumption_mwh), 2000.00)
+        self.assertEqual(float(record.co2_emissions_tons), 800.00)
+        
+        # Verify conflict was logged
+        self.assertEqual(len(response.data['errors']), 1)
+        self.assertIn('Duplicate entry', response.data['errors'][0])
+        self.assertIn('higher emissions/energy values', response.data['errors'][0])
+
+    def test_csv_duplicate_rows_keeps_first_on_equal_totals(self):
+        """Test that duplicate rows with equal totals keep the first one"""
+        csv_content = f"""{self.csv_header_line}
+Company A,2023,Energy,1000.00,500.00
+Company A,2023,Energy,500.00,1000.00"""
+        
+        file = self.create_csv_file(csv_content)
+        response = self.client.post(self.upload_url, {'file': file})
+        
+        # Should succeed with 1 created record and 1 conflict logged
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['created'], 1)
+        self.assertEqual(EmissionRecord.objects.count(), 1)
+        
+        # Both have same total (1500) but first one should be kept
+        record = EmissionRecord.objects.get(company='Company A', year=2023, sector='Energy')
+        self.assertEqual(float(record.energy_consumption_mwh), 1000.00)
+        self.assertEqual(float(record.co2_emissions_tons), 500.00)
 
     # ========== ERROR CASES ==========
 
@@ -104,7 +157,7 @@ Company B,2023,Energy,3000.00,1500.00"""
 
     def test_csv_with_only_headers(self):
         """Test that CSV with only headers and no data rows is rejected"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)"""
+        csv_content = self.csv_header_line
         file = self.create_csv_file(csv_content)
         response = self.client.post(self.upload_url, {'file': file})
         
@@ -138,7 +191,7 @@ Company A,2023,Energy,1000.50,500.25"""
 
     def test_missing_required_field_empresa(self):
         """Test that row with missing Empresa field is skipped with error"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 ,2023,Energy,1000.50,500.25"""
         
         file = self.create_csv_file(csv_content)
@@ -152,7 +205,7 @@ Company A,2023,Energy,1000.50,500.25"""
 
     def test_invalid_year_format(self):
         """Test that non-integer year values cause an error for that row"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 Company A,2023abc,Energy,1000.50,500.25"""
         
         file = self.create_csv_file(csv_content)
@@ -165,7 +218,7 @@ Company A,2023abc,Energy,1000.50,500.25"""
 
     def test_invalid_energy_format(self):
         """Test that non-numeric energy values cause an error for that row"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 Company A,2023,Energy,invalid,500.25"""
         
         file = self.create_csv_file(csv_content)
@@ -177,7 +230,7 @@ Company A,2023,Energy,invalid,500.25"""
 
     def test_invalid_emissions_format(self):
         """Test that non-numeric emissions values cause an error for that row"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 Company A,2023,Energy,1000.50,not_a_number"""
         
         file = self.create_csv_file(csv_content)
@@ -189,7 +242,7 @@ Company A,2023,Energy,1000.50,not_a_number"""
 
     def test_invalid_data_types_multiple_rows(self):
         """Test handling of multiple rows with invalid data types"""
-        csv_content = """Empresa,Ano,Setor,Consumo de Energia (MWh),Emissões de CO2 (toneladas)
+        csv_content = f"""{self.csv_header_line}
 Company A,2023abc,Energy,1000.50,500.25
 Company B,2023,Manufacturing,invalid,1000.50
 Company C,2023,Services,2000.50,500.25"""
