@@ -19,7 +19,7 @@ class EmissionRecord(models.Model):
         ordering = ["-year", "company"]
         verbose_name = "Emission Record"
         verbose_name_plural = "Emission Records"
-        unique_together = ("company", "year")
+        unique_together = ("company", "year", "sector")
 
     def __str__(self):
         return f"{self.company} – {self.year}"
