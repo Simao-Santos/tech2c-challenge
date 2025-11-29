@@ -1,6 +1,7 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
 from .models import EmissionRecord
 from .serializers import EmissionRecordSerializer
 import csv
@@ -36,17 +37,44 @@ class EmissionRecordViewSet(viewsets.ModelViewSet):
         
         try:
             # Read and decode the CSV file
-            decoded_file = csv_file.read().decode('utf-8-sig')  # utf-8-sig handles BOM
+            decoded_file = csv_file.read().decode('utf-8-sig')
             io_string = io.StringIO(decoded_file)
             reader = csv.DictReader(io_string)
             
-            created_count = 0
-            updated_count = 0
+            # Validate required headers are present
+            required_headers = {
+                'Empresa', 
+                'Ano', 
+                'Setor', 
+                'Consumo de Energia (MWh)', 
+                'Emissões de CO2 (toneladas)'
+            }
+            
+            if not reader.fieldnames:
+                return Response(
+                    {"error": "CSV file is empty or has no headers"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            actual_headers = set(reader.fieldnames)
+            missing_headers = required_headers - actual_headers
+            
+            if missing_headers:
+                return Response(
+                    {"error": f"Missing required CSV headers: {', '.join(missing_headers)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Collect records for bulk operations
+            records_to_create = []
+            records_to_update = []
+            existing_records = {}
             errors = []
             
-            for row_num, row in enumerate(reader, start=2):  # start=2 because row 1 is header
+            # Parse all rows first
+            parsed_rows = []
+            for row_num, row in enumerate(reader, start=2):
                 try:
-                    # Map CSV columns to model fields
                     company = row.get('Empresa', '').strip()
                     year = row.get('Ano', '').strip()
                     sector = row.get('Setor', '').strip()
@@ -58,34 +86,92 @@ class EmissionRecordViewSet(viewsets.ModelViewSet):
                         errors.append(f"Row {row_num}: Missing required fields")
                         continue
                     
-                    # Create or update the record
-                    record, created = EmissionRecord.objects.update_or_create(
-                        company=company,
-                        year=int(year),
-                        defaults={
-                            'sector': sector,
-                            'energy_consumption_mwh': float(energy.replace(",", ".")),
-                            'co2_emissions_tons': float(emissions.replace(",", ".")),
-                        }
-                    )
+                    # Parse and validate data types
+                    try:
+                        year_int = int(year)
+                        energy_float = float(energy.replace(",", "."))
+                        emissions_float = float(emissions.replace(",", "."))
+                    except ValueError as e:
+                        errors.append(f"Row {row_num}: Invalid data format - {str(e)}")
+                        continue
                     
-                    if created:
-                        created_count += 1
-                    else:
-                        updated_count += 1
-                        
-                except ValueError as e:
-                    errors.append(f"Row {row_num}: Invalid data format - {str(e)}")
+                    parsed_rows.append({
+                        'company': company,
+                        'year': year_int,
+                        'sector': sector,
+                        'energy_consumption_mwh': energy_float,
+                        'co2_emissions_tons': emissions_float,
+                        'row_num': row_num
+                    })
+                    
                 except Exception as e:
                     errors.append(f"Row {row_num}: {str(e)}")
             
+            if not parsed_rows:
+                return Response(
+                    {
+                        "error": "No valid rows to process",
+                        "errors": errors
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Use transaction for atomicity
+            with transaction.atomic():
+                # Get existing records for comparison
+                company_year_pairs = [(row['company'], row['year']) for row in parsed_rows]
+                existing_records_qs = EmissionRecord.objects.filter(
+                    company__in=[pair[0] for pair in company_year_pairs],
+                    year__in=[pair[1] for pair in company_year_pairs]
+                )
+                
+                # Create a lookup dict for existing records
+                for record in existing_records_qs:
+                    existing_records[(record.company, record.year)] = record
+                
+                # Separate into create and update operations
+                for row_data in parsed_rows:
+                    key = (row_data['company'], row_data['year'])
+                    
+                    if key in existing_records:
+                        # Update existing record
+                        existing_record = existing_records[key]
+                        existing_record.sector = row_data['sector']
+                        existing_record.energy_consumption_mwh = row_data['energy_consumption_mwh']
+                        existing_record.co2_emissions_tons = row_data['co2_emissions_tons']
+                        records_to_update.append(existing_record)
+                    else:
+                        # Create new record
+                        records_to_create.append(EmissionRecord(
+                            company=row_data['company'],
+                            year=row_data['year'],
+                            sector=row_data['sector'],
+                            energy_consumption_mwh=row_data['energy_consumption_mwh'],
+                            co2_emissions_tons=row_data['co2_emissions_tons']
+                        ))
+                
+                # Perform bulk operations
+                created_count = 0
+                updated_count = 0
+                
+                if records_to_create:
+                    EmissionRecord.objects.bulk_create(records_to_create)
+                    created_count = len(records_to_create)
+                
+                if records_to_update:
+                    EmissionRecord.objects.bulk_update(
+                        records_to_update,
+                        ['sector', 'energy_consumption_mwh', 'co2_emissions_tons']
+                    )
+                    updated_count = len(records_to_update)
+            
             return Response({
-                "message": "CSV import completed",
+                "message": "CSV import completed successfully",
                 "created": created_count,
                 "updated": updated_count,
                 "errors": errors,
                 "total_processed": created_count + updated_count
-            }, status=status.HTTP_201_CREATED)
+            }, status=status.HTTP_201_CREATED if created_count > 0 else status.HTTP_200_OK)
             
         except Exception as e:
             return Response(
