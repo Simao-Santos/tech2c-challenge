@@ -3,10 +3,19 @@ import { Leaf, Zap, Building2, TrendingUp, AlertCircle } from 'lucide-react';
 import { EmissionsByYear } from '@/components/EmissionsByYear';
 import { AverageEnergyChart } from '@/components/AverageEnergyChart';
 import { TopEmittersChart } from '@/components/TopEmittersChart';
+import { EnergyEfficiencyChart } from '@/components/EnergyEfficiencyChart';
+import { EmissionsBySectorChart } from '@/components/EmissionsBySectorChart';
 import { StatsCard } from '@/components/StatsCard';
 import { CSVImport } from '@/components/CSVImport';
 import { api, EmissionRecord } from '@/services/api';
-import { getTotalEmissionsByYear, getAverageEnergyByCompany, getTopEmitters, EmissionData} from '@/utils/emissions';
+import { 
+  getTotalEmissionsByYear, 
+  getAverageEnergyByCompany, 
+  getTopEmitters, 
+  getEnergyEfficiency,
+  getEmissionsBySector,
+  EmissionData
+} from '@/utils/emissions';
 
 const Index = () => {
   const [data, setData] = useState<EmissionData[]>([]);
@@ -80,6 +89,8 @@ const Index = () => {
   const emissionsByYear = getTotalEmissionsByYear(data);
   const averageEnergy = getAverageEnergyByCompany(data);
   const topEmitters = getTopEmitters(data, 5);
+  const energyEfficiency = getEnergyEfficiency(data, 10);
+  const emissionsBySector = getEmissionsBySector(data);
 
   const totalEmissions = data.reduce((sum, item) => sum + item.emissoesCO2, 0);
   const totalEnergy = data.reduce((sum, item) => sum + item.consumoEnergia, 0);
@@ -142,6 +153,11 @@ const Index = () => {
             <div className="grid gap-6 lg:grid-cols-2 mb-6">
               <EmissionsByYear data={emissionsByYear} />
               <TopEmittersChart data={topEmitters} />
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2 mb-6">
+              <EnergyEfficiencyChart data={energyEfficiency} />
+              <EmissionsBySectorChart data={emissionsBySector} />
             </div>
 
             <div className="grid gap-6">

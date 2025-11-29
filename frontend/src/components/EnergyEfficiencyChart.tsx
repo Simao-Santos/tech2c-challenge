@@ -1,31 +1,31 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-interface TopEmittersChartProps {
-  data: { company: string; total: number }[];
+interface EnergyEfficiencyChartProps {
+  data: { company: string; efficiency: number }[];
 }
 
-export function TopEmittersChart({ data }: TopEmittersChartProps) {
+export function EnergyEfficiencyChart({ data }: EnergyEfficiencyChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top 5 Companies with Highest Emissions</CardTitle>
-        <CardDescription>Total CO₂ emissions in tonnes</CardDescription>
+        <CardTitle>Energy Efficiency Ratio</CardTitle>
+        <CardDescription>Top 10 companies by CO₂ emissions per MWh (lower is better)</CardDescription>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={350}>
+        <ResponsiveContainer width="100%" height={400}>
           <BarChart data={data} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
               type="number"
               className="text-muted-foreground"
-              label={{ value: 'Tonnes CO₂', position: 'insideBottom', offset: -5 }}
+              label={{ value: 'tonnes CO₂ / MWh', position: 'insideBottom', offset: -5 }}
             />
             <YAxis 
               type="category"
               dataKey="company"
               width={100}
-              className="text-muted-foreground font-medium"
+              className="text-muted-foreground text-sm"
             />
             <Tooltip 
               contentStyle={{ 
@@ -33,9 +33,9 @@ export function TopEmittersChart({ data }: TopEmittersChartProps) {
                 border: '1px solid hsl(var(--border))',
                 borderRadius: 'var(--radius)'
               }}
-              formatter={(value: number) => [`${value.toLocaleString()} tonnes`, 'Total Emissions']}
+              formatter={(value: number) => [value.toFixed(2), 'Efficiency']}
             />
-            <Bar dataKey="total" fill="hsl(var(--chart-1))" radius={[0, 8, 8, 0]} />
+            <Bar dataKey="efficiency" fill="hsl(var(--chart-4))" radius={[0, 8, 8, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

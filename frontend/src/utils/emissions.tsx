@@ -45,3 +45,39 @@ export function getTopEmitters(data: EmissionData[], limit: number) {
     .sort((a, b) => b.total - a.total)
     .slice(0, limit);
 }
+
+export function getEnergyEfficiency(data: EmissionData[], limit: number = 10) {
+  const companyMap = new Map<string, { emissions: number; energy: number }>();
+  data.forEach(item => {
+    const current = companyMap.get(item.empresa) || { emissions: 0, energy: 0 };
+    companyMap.set(item.empresa, {
+      emissions: current.emissions + item.emissoesCO2,
+      energy: current.energy + item.consumoEnergia,
+    });
+  });
+  return Array.from(companyMap.entries())
+    .map(([company, { emissions, energy }]) => ({
+      company,
+      efficiency: energy > 0 ? emissions / energy : 0,
+    }))
+    .sort((a, b) => b.efficiency - a.efficiency)
+    .slice(0, limit);
+}
+
+export function getEmissionsBySector(data: EmissionData[]) {
+  const sectorMap = new Map<string, { emissions: number; energy: number }>();
+  data.forEach(item => {
+    const current = sectorMap.get(item.setor) || { emissions: 0, energy: 0 };
+    sectorMap.set(item.setor, {
+      emissions: current.emissions + item.emissoesCO2,
+      energy: current.energy + item.consumoEnergia,
+    });
+  });
+  return Array.from(sectorMap.entries())
+    .map(([sector, { emissions, energy }]) => ({
+      sector,
+      emissions,
+      energy,
+    }))
+    .sort((a, b) => b.emissions - a.emissions);
+}
