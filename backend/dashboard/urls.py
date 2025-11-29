@@ -3,8 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import EmissionRecordViewSet
 
 router = DefaultRouter()
-router.register(r"records", EmissionRecordViewSet)
+router.register(r'emissions', EmissionRecordViewSet, basename='emission')
 
 urlpatterns = [
-    path("", include(router.urls)),
+    path('', include(router.urls)),
 ]
