@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { api } from '@/services/api';
 
@@ -10,9 +10,10 @@ interface ImportResult {
   total_processed: number;
 }
 
-export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: () => void }) => {
+export type { ImportResult };
+
+export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: (result: ImportResult) => void }) => {
   const [isImporting, setIsImporting] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,17 +29,17 @@ export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: () => void })
 
     setIsImporting(true);
     setError(null);
-    setResult(null);
 
     try {
       const response = await api.importCSV(file);
-      setResult(response);
+      console.log('Import successful:', response);
       
-      // Call success callback if provided
+      // Call success callback with the response
       if (onImportSuccess) {
-        onImportSuccess();
+        onImportSuccess(response);
       }
     } catch (err) {
+      console.error('Import error:', err);
       setError(err instanceof Error ? err.message : 'Failed to import CSV');
     } finally {
       setIsImporting(false);
@@ -53,13 +54,14 @@ export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: () => void })
     fileInputRef.current?.click();
   };
 
-  const clearResult = () => {
-    setResult(null);
+  const clearError = () => {
     setError(null);
   };
 
   return (
-    <div className="space-y-4">
+    <>
+      {/* Main Content */}
+      <div className="space-y-4">
       {/* Import Button */}
       <div>
         <input
@@ -79,47 +81,11 @@ export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: () => void })
         </button>
       </div>
 
-      {/* Success Result */}
-      {result && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 relative">
-          <button
-            onClick={clearResult}
-            className="absolute top-2 right-2 text-green-600 hover:text-green-800"
-          >
-            <X className="h-4 w-4" />
-          </button>
-          <div className="flex items-start gap-3">
-            <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="font-semibold text-green-900 mb-2">{result.message}</h3>
-              <div className="text-sm text-green-800 space-y-1">
-                <p>✓ Created: {result.created} records</p>
-                <p>✓ Updated: {result.updated} records</p>
-                <p>✓ Total processed: {result.total_processed} records</p>
-              </div>
-              
-              {result.errors.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-green-200">
-                  <p className="font-semibold text-orange-800 mb-1">
-                    Warnings ({result.errors.length}):
-                  </p>
-                  <ul className="text-sm text-orange-700 space-y-1 max-h-32 overflow-y-auto">
-                    {result.errors.map((err, idx) => (
-                      <li key={idx}>• {err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 relative">
           <button
-            onClick={clearResult}
+            onClick={clearError}
             className="absolute top-2 right-2 text-red-600 hover:text-red-800"
           >
             <X className="h-4 w-4" />
@@ -139,6 +105,7 @@ export const CSVImport = ({ onImportSuccess }: { onImportSuccess?: () => void })
         <p className="font-medium mb-1">CSV Format:</p>
         <p>Expected columns: Empresa, Ano, Setor, Consumo de Energia (MWh), Emissões de CO2 (toneladas)</p>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
