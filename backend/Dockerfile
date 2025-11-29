@@ -5,14 +5,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
-WORKDIR /tech2C_challenge
+WORKDIR /api
 
 # Install Python dependencies
-COPY requirements.txt /tech2C_challenge/
+COPY requirements.txt /api/
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . /tech2C_challenge/
+COPY . /api/
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

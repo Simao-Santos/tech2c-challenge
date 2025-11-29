@@ -1,6 +1,7 @@
 services:
-  web:
-    build: .
+  backend:
+    build:
+      context: ./backend
     env_file:
       - .env
     environment:
@@ -22,6 +23,16 @@ services:
       - POSTGRES_PORT=5432
     ports:
       - "${POSTGRES_PORT}:5432"
+
+  frontend:
+    build:
+      context: ./frontend
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    ports:
+      - "${REACT_PORT}:${REACT_PORT}"
 
 volumes:
   postgres_data:
