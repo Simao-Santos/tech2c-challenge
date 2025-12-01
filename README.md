@@ -12,6 +12,7 @@ Make sure you have `docker` and `docker-compose` installed.
 > *Note: Docker Desktop (Windows/macOS) includes Docker Compose automatically.*
 - **Linux:** https://docs.docker.com/compose/install/
 
+Create the .env file, you can copy the values from .env.example.
 Afterwards just run `docker-compose up --build -d` and access [http://localhost:3001/](http://localhost:3001/)
 
 ## Testing
